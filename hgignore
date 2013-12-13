@@ -1,0 +1,23 @@
+# HG changeset patch
+# Parent ca84d3c9dc24dd527112580ac5a67468eaeb3df0
+
+diff --git a/.hgignore b/.hgignore
+--- a/.hgignore
++++ b/.hgignore
+@@ -40,3 +40,16 @@
+ ^liboctave/operators/\w+-op-\w+\.mk$
+ 
+ ^libinterp/dldfcn/module\.mk$
++
++## PK
++^build/.*/
++^build/.gdbinit
++^build/Makefile
++^build/config.h
++^build/config.log
++^build/config.status
++#^build/do_configure.sh
++^build/libtool
++^build/oct-conf-post.h
++^build/run-octave
++^build/stamp-h1

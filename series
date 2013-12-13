@@ -1,0 +1,5 @@
+hgignore
+cd-dash
+classdef-fix-idxparen
+pow-range-checks
+filename-completion

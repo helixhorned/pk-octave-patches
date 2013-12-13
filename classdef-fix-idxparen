@@ -1,0 +1,24 @@
+# HG changeset patch
+# Parent f38c17a49f252aed9b7e7f3e6f8344d6ccb5fc92
+Fix crash when indexing classdef object with empty parentheses.
+
+* ov-classdef.cc: check whether 'ival' is empty and generate an error in
+  that case instead of continuing and crashing.
+
+diff --git a/libinterp/octave-value/ov-classdef.cc b/libinterp/octave-value/ov-classdef.cc
+--- a/libinterp/octave-value/ov-classdef.cc
++++ b/libinterp/octave-value/ov-classdef.cc
+@@ -1330,6 +1330,13 @@
+           bool is_scalar = true;
+           Array<idx_vector> iv (dim_vector (1, ival.length ()));
+ 
++         if (ival.empty ())
++            {
++              ::error("can't index %s object(s) with empty parentheses",
++                      class_name ().c_str ());
++              break;
++            }
++
+           for (int i = 0; ! error_state && i < ival.length (); i++)
+             {
+               iv(i) = ival(i).index_vector ();

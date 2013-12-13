@@ -1,0 +1,5 @@
+33b4b61107c62a993e0e9a39474a14e291c255ab:hgignore
+633eeb109c7fd5e878f2ce1fa71193ecd9219c95:cd-dash
+8b177446be959cfd890344a63e624a7192556c9f:classdef-fix-idxparen
+b5b20c9dc29eb24b5da7772a87aa84f79b714ca5:pow-range-checks
+3be9e657a45e62cf35e67eec6142d2e1adf5cce3:filename-completion

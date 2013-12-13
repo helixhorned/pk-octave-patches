@@ -1,0 +1,305 @@
+# HG changeset patch
+# Parent b5b20c9dc29eb24b5da7772a87aa84f79b714ca5
+Make file name completion work on the command line, but with some issues left.
+
+* cmd-edit.{cc,h}: add command_editor methods set_saved_start_end(),
+  get_saved_start() and get_saved_end(). For the gnu_readline class derived from
+  command_editor, also implement the corresponding do_* methods. (For
+  default_command_editor, leave the dummy ones.)
+  In gnu_readline::command_completer(), save the bounds of the command-separator
+  broken input line, wrt the whole input line buffer.
+* input.cc: provide two sets of word-breaking chars. WORD_BREAK_CHARS_CMD is the
+  one that Readline sees and acts acts according to. WORD_BREAK_CHARS_DIR has
+  the chars in [+-/~] removed from it, to be useful with file name completion.
+  in generate_completion(), get the Readline input buffer and bounds mentioned
+  in the first point. Then, do the word breaking according to the DIR chars
+  *ourselves*. Pass everything back so that it makes sense to Readline.
+  Take care to: append a dirsep char if completed directory; append space if
+  completed file name. (In effect, reimplementing some Readline-provided
+  completion functionality.)
+* Consider "load" to be a command needing file name completion, too.
+* Known issues:
+ - When completing e.g. "octave-" with candidates {"octave-default",
+   "octave-classdef"}, pressing TAB will only show the suffixes after "-", not
+   the whole names.
+ - With some inputs, Readline does not give us the whole line! This is worked
+   around. Example:
+   cd qwe("qwe ~/d<TAB>
+
+diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
+--- a/libinterp/corefcn/input.cc
++++ b/libinterp/corefcn/input.cc
+@@ -47,6 +47,7 @@
+ #include "defun.h"
+ #include "dirfns.h"
+ #include "error.h"
++#include "file-stat.h"
+ #include "gripes.h"
+ #include "help.h"
+ #include "hook-fcn.h"
+@@ -335,8 +336,6 @@
+ {
+   string_vector names;
+ 
+-  prefix = "";
+-
+   if (looks_like_struct (text))
+     names = generate_struct_completions (text, prefix, hint);
+   else
+@@ -352,8 +351,8 @@
+ static bool
+ is_completing_dirfns (void)
+ {
+-  static std::string dirfns_commands[] = {"cd", "ls"};
+-  static const size_t dirfns_commands_length = 2;
++  static std::string dirfns_commands[] = {"cd", "ls", "load"};
++  static const size_t dirfns_commands_length = 3;
+ 
+   bool retval = false;
+ 
+@@ -373,6 +372,11 @@
+   return retval;
+ }
+ 
++// Word break characters for command completion.
++static const char *WORD_BREAK_CHARS_CMD = "\t\n !\"\'*+-/:;<=>(){}[\\]^`~";
++// Word break characters for file name completion. Don't break at chars in [+-/~].
++static const char *WORD_BREAK_CHARS_DIR = "\t\n !\"\'*:;<=>(){}[\\]^`";
++
+ static std::string
+ generate_completion (const std::string& text, int state)
+ {
+@@ -391,6 +395,10 @@
+ 
+   static int matches = 0;
+ 
++  // For file name completion in the Readline build, this will be the
++  // stripped off file name prefix (may be empty).
++  static std::string fn_prefix;
++
+   if (state == 0)
+     {
+       list_index = 0;
+@@ -409,8 +417,50 @@
+ 
+       name_list_len = name_list.length ();
+ 
+-      file_name_list = command_editor::generate_filename_completions (text);
++#if defined (USE_READLINE)
++      // Readline breaks the input line according to
++      // WORD_BREAK_CHARS_CMD, but we want it according to
++      // WORD_BREAK_CHARS_DIR instead. Get the bounds of the cmd-broken
++      // line in the whole line buffer first.
++      int start = command_editor::get_saved_start ();  // inclusive
++      int end = command_editor::get_saved_end ();  // exclusive
++      std::string our_text = command_editor::get_line_buffer ();
+ 
++      assert (text == our_text.substr (start, end-start));
++
++      // Potentially strip suffix if we're completing a component of a
++      // file name in the middle.
++      our_text.erase (end);
++
++      // Now, break the line manually, according to the *file name*
++      // word-breaking characters.
++      size_t break_idx = our_text.find_last_of (WORD_BREAK_CHARS_DIR);
++      if (break_idx != std::string::npos)
++        our_text.erase (0, break_idx + 1);
++
++      // Now, 'text' should be a (not necessarily proper) suffix of 'our_text'.
++      size_t text_len = text.length ();
++      ssize_t prefix_len = our_text.length () - text_len;
++      if (prefix_len < 0)  // With e.g: cd qwe("qwe ~/d<TAB>
++        prefix_len = 0;
++      else
++        assert (our_text.substr (prefix_len, text_len) == text);
++      fn_prefix = our_text.substr (0, prefix_len);
++#else
++      // Getting/setting saved start and end indices not implemented for
++      // command editors other than the one GNU Readline one.
++      std::string our_text = text;
++#endif
++
++      file_name_list = command_editor::generate_filename_completions (our_text);
++
++#if defined (USE_READLINE)
++      for (int i = 0; i < file_name_list.length (); i++)
++        {
++          assert (file_name_list[i].length () >= static_cast<size_t> (prefix_len));
++          file_name_list[i].erase (0, prefix_len);
++        }
++#endif
+       name_list.append (file_name_list);
+ 
+       name_list_total_len = name_list.length ();
+@@ -419,7 +469,7 @@
+ 
+       matches = 0;
+ 
+-      for (int i = 0; i < name_list_len; i++)
++      for (int i = 0; i < name_list_total_len; i++)
+         if (hint == name_list[i].substr (0, hint_len))
+           matches++;
+     }
+@@ -434,25 +484,48 @@
+ 
+           if (hint == name.substr (0, hint_len))
+             {
+-              if (list_index <= name_list_len && ! prefix.empty ())
++              // Was it a command (as opposed to file name) completion?
++              bool cmd_completion = (list_index <= name_list_len);
++
++              if (cmd_completion && ! prefix.empty ())
+                 retval = prefix + "." + name;
+               else
+                 retval = name;
+ 
++              // FIXME: code duplication from file-ops.cc:
++#if (defined (OCTAVE_HAVE_WINDOWS_FILESYSTEM) && ! defined (OCTAVE_HAVE_POSIX_FILESYSTEM))
++              const char system_dir_sep_char = '\\';
++#else
++              const char system_dir_sep_char = '/';
++#endif
+               // FIXME: looks_like_struct is broken for now,
+               //        so it always returns false.
+ 
+-              if (matches == 1 && looks_like_struct (retval))
++              char append_char;
++
++              if (! cmd_completion)
+                 {
+-                  // Don't append anything, since we don't know
+-                  // whether it should be '(' or '.'.
++                  file_stat fs (fn_prefix + name);
++                  if (fs && fs.is_dir ())
++                    append_char = system_dir_sep_char;
++                  else if (matches == 1)
++                    append_char = Vcompletion_append_char;
++                  else
++                    append_char = '\0';
++                }
++              else if (matches == 1 && looks_like_struct (retval))
++                {
++                  // Don't append anything. For structs, we don't know
++                  // whether it should be '(' or '.' as it could be a
++                  // struct array. For file names, we may want to
++                  // complete further.
+ 
+-                  command_editor::set_completion_append_character ('\0');
++                  append_char = '\0';
+                 }
+               else
+-                command_editor::set_completion_append_character
+-                  (Vcompletion_append_char);
++                append_char = Vcompletion_append_char;
+ 
++              command_editor::set_completion_append_character (append_char);
+               break;
+             }
+         }
+@@ -481,7 +554,7 @@
+   // FIXME: this needs to include a comma too, but that
+   // causes trouble for the new struct element completion code.
+ 
+-  static const char *s = "\t\n !\"\'*+-/:;<=>(){}[\\]^`~";
++  static const char *s = WORD_BREAK_CHARS_CMD;
+ 
+   command_editor::set_basic_word_break_characters (s);
+ 
+diff --git a/liboctave/util/cmd-edit.cc b/liboctave/util/cmd-edit.cc
+--- a/liboctave/util/cmd-edit.cc
++++ b/liboctave/util/cmd-edit.cc
+@@ -141,6 +141,12 @@
+   string_vector
+   do_generate_filename_completions (const std::string& text);
+ 
++  void do_set_saved_start_end(int start, int end) { saved_start = start; saved_end = end; }
++
++  int do_get_saved_start(void) { return saved_start; }
++
++  int do_get_saved_end(void) { return saved_end; }
++
+   std::string do_get_line_buffer (void) const;
+ 
+   std::string do_get_current_line (void) const;
+@@ -205,6 +211,8 @@
+ 
+   user_accept_line_fcn user_accept_line_function;
+ 
++  int saved_start, saved_end;
++
+   static char *command_generator (const char *text, int state);
+ 
+   static char *command_quoter (char *text, int match_type, char *quote_pointer);
+@@ -779,11 +787,13 @@
+ }
+ 
+ char **
+-gnu_readline::command_completer (const char *text, int, int)
++gnu_readline::command_completer (const char *text, int start, int end)
+ {
+-  char **matches = 0;
+-  matches
++  set_saved_start_end(start, end);
++
++  char **matches
+     = ::octave_rl_completion_matches (text, gnu_readline::command_generator);
++
+   return matches;
+ }
+ 
+@@ -1273,6 +1283,25 @@
+          ? instance->do_generate_filename_completions (text) : string_vector ();
+ }
+ 
++void
++command_editor::set_saved_start_end (int start, int end)
++{
++  if (instance_ok ())
++    instance->do_set_saved_start_end(start, end);
++}
++
++int
++command_editor::get_saved_start (void)
++{
++  return (instance_ok ()) ? instance->do_get_saved_start () : -1;
++}
++
++int
++command_editor::get_saved_end (void)
++{
++  return (instance_ok ()) ? instance->do_get_saved_end () : -1;
++}
++
+ std::string
+ command_editor::get_line_buffer (void)
+ {
+diff --git a/liboctave/util/cmd-edit.h b/liboctave/util/cmd-edit.h
+--- a/liboctave/util/cmd-edit.h
++++ b/liboctave/util/cmd-edit.h
+@@ -123,6 +123,12 @@
+ 
+   static string_vector generate_filename_completions (const std::string& text);
+ 
++  static void set_saved_start_end(int start, int end);
++
++  static int get_saved_start(void);
++
++  static int get_saved_end(void);
++
+   static std::string get_line_buffer (void);
+ 
+   static std::string get_current_line (void);
+@@ -293,6 +299,12 @@
+   virtual string_vector
+   do_generate_filename_completions (const std::string& text) = 0;
+ 
++  virtual void do_set_saved_start_end(int, int) { }
++
++  virtual int do_get_saved_start(void) { return -1; }
++
++  virtual int do_get_saved_end(void) { return -1; }
++
+   virtual std::string do_get_line_buffer (void) const = 0;
+ 
+   virtual std::string do_get_current_line (void) const = 0;

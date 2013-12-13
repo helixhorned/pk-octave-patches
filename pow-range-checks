@@ -1,0 +1,215 @@
+# HG changeset patch
+# Parent 8b177446be959cfd890344a63e624a7192556c9f
+In (element-wise) power op. functions, do range check before casting to int.
+
+* lo-mappers.h: add two "fits-into-int" predicates, one symmetric
+  [INT_MIN+1, INT_MAX], the other "regular" [INT_MIN, INT_MAX].
+* *xpow.cc, op-s*m-s.cc: use them where appropriate.
+
+diff --git a/libinterp/corefcn/sparse-xpow.cc b/libinterp/corefcn/sparse-xpow.cc
+--- a/libinterp/corefcn/sparse-xpow.cc
++++ b/libinterp/corefcn/sparse-xpow.cc
+@@ -67,7 +67,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_sym (b))
+         {
+           int btmp = static_cast<int> (b);
+           if (btmp == 0)
+@@ -140,7 +140,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_sym (b))
+         {
+           int btmp = static_cast<int> (b);
+           if (btmp == 0)
+@@ -338,7 +338,7 @@
+       octave_idx_type nr = a.rows ();
+       octave_idx_type nc = a.cols ();
+ 
+-      if (static_cast<int> (b) != b && a.any_element_is_negative ())
++      if (! xisint_full (b) && a.any_element_is_negative ())
+         {
+           ComplexMatrix result (nr, nc, Complex (std::pow (0.0, b)));
+ 
+@@ -372,7 +372,7 @@
+           retval = octave_value (result);
+         }
+     }
+-  else if (static_cast<int> (b) != b && a.any_element_is_negative ())
++  else if (! xisint_full (b) && a.any_element_is_negative ())
+     {
+       SparseComplexMatrix result (a);
+ 
+@@ -439,7 +439,7 @@
+         if (a.data(i) < 0.0)
+           {
+             double btmp = b (a.ridx (i), j);
+-            if (static_cast<int> (btmp) != btmp)
++            if (! xisint_full (btmp))
+               {
+                 convert_to_complex = 1;
+                 goto done;
+diff --git a/libinterp/corefcn/xpow.cc b/libinterp/corefcn/xpow.cc
+--- a/libinterp/corefcn/xpow.cc
++++ b/libinterp/corefcn/xpow.cc
+@@ -198,7 +198,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_sym (b))
+         {
+           int btmp = static_cast<int> (b);
+           if (btmp == 0)
+@@ -283,7 +283,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_full (b))
+         {
+           DiagMatrix r (nr, nc);
+           for (octave_idx_type i = 0; i < nc; i++)
+@@ -307,9 +307,8 @@
+ xpow (const PermMatrix& a, double b)
+ {
+   octave_value retval;
+-  int btmp = static_cast<int> (b);
+-  if (btmp == b)
+-    return a.power (btmp);
++  if (xisint_full (b))
++    return a.power (static_cast<int> (b));
+   else
+     return xpow (Matrix (a), b);
+ }
+@@ -462,7 +461,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_sym (b))
+         {
+           int btmp = static_cast<int> (b);
+           if (btmp == 0)
+@@ -805,7 +804,7 @@
+         octave_quit ();
+         double atmp = a (i, j);
+         double btmp = b (i, j);
+-        if (atmp < 0.0 && static_cast<int> (btmp) != btmp)
++        if (atmp < 0.0 && ! xisint_full (btmp))
+           {
+             convert_to_complex = 1;
+             goto done;
+@@ -1268,7 +1267,7 @@
+       octave_quit ();
+       double atmp = a(i);
+       double btmp = b(i);
+-      if (atmp < 0.0 && static_cast<int> (btmp) != btmp)
++      if (atmp < 0.0 && ! xisint_full (btmp))
+         {
+           convert_to_complex = true;
+           goto done;
+@@ -1644,7 +1643,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_full (b))
+         {
+           int btmp = static_cast<int> (b);
+           if (btmp == 0)
+@@ -1729,7 +1728,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_full (b))
+         {
+           FloatDiagMatrix r (nr, nc);
+           for (octave_idx_type i = 0; i < nc; i++)
+@@ -1897,7 +1896,7 @@
+     error ("for A^b, A must be a square matrix. Use .^ for elementwise power.");
+   else
+     {
+-      if (static_cast<int> (b) == b)
++      if (xisint_full (b))
+         {
+           int btmp = static_cast<int> (b);
+           if (btmp == 0)
+@@ -2195,7 +2194,7 @@
+         octave_quit ();
+         float atmp = a (i, j);
+         float btmp = b (i, j);
+-        if (atmp < 0.0 && static_cast<int> (btmp) != btmp)
++        if (atmp < 0.0 && ! xisint_full (btmp))
+           {
+             convert_to_complex = 1;
+             goto done;
+@@ -2618,7 +2617,7 @@
+       octave_quit ();
+       float atmp = a(i);
+       float btmp = b(i);
+-      if (atmp < 0.0 && static_cast<int> (btmp) != btmp)
++      if (atmp < 0.0 && ! xisint_full (btmp))
+         {
+           convert_to_complex = true;
+           goto done;
+diff --git a/libinterp/operators/op-scm-s.cc b/libinterp/operators/op-scm-s.cc
+--- a/libinterp/operators/op-scm-s.cc
++++ b/libinterp/operators/op-scm-s.cc
+@@ -69,7 +69,7 @@
+                    const octave_scalar&);
+ 
+   double tmp = v2.scalar_value ();
+-  if (static_cast<int> (tmp) == tmp)
++  if (xisint_full (tmp))
+     return xpow (v1.sparse_complex_matrix_value (), tmp);
+   else
+     return xpow (v1.complex_matrix_value (), tmp);
+diff --git a/libinterp/operators/op-sm-s.cc b/libinterp/operators/op-sm-s.cc
+--- a/libinterp/operators/op-sm-s.cc
++++ b/libinterp/operators/op-sm-s.cc
+@@ -63,7 +63,7 @@
+   CAST_BINOP_ARGS (const octave_sparse_matrix&, const octave_scalar&);
+ 
+   double tmp = v2.scalar_value ();
+-  if (static_cast<int> (tmp) == tmp)
++  if (xisint_full (tmp))
+     return xpow (v1.sparse_matrix_value (), tmp);
+   else
+     return xpow (v1.matrix_value (), tmp);
+diff --git a/liboctave/numeric/lo-mappers.h b/liboctave/numeric/lo-mappers.h
+--- a/liboctave/numeric/lo-mappers.h
++++ b/liboctave/numeric/lo-mappers.h
+@@ -216,6 +216,26 @@
+   return xfinite (x) && x == xround (x);
+ }
+ 
++// "Symmetric" fits-into-int precidate: checks for x being an integer in
++// [INT_MIN+1, INT_MAX].
++// Thus, if the check returns true, it is safe to
++//  - cast this value to an int
++//  - negate the cast value
++inline bool
++xisint_sym (double x)
++{
++  return (x > std::numeric_limits<int>::min () && x <= std::numeric_limits<int>::max ())
++         && xceil (x) == x;
++}
++
++// "Non-symmetric"/"full"/"normal" fits-into-int precicate.
++inline bool
++xisint_full (double x)
++{
++  return (x >= std::numeric_limits<int>::min () && x <= std::numeric_limits<int>::max ())
++         && xceil (x) == x;
++}
++
+ // Test for negative sign.
+ extern OCTAVE_API bool xnegative_sign (double x);
+ extern OCTAVE_API bool xnegative_sign (float x);

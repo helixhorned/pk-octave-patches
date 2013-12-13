@@ -1,0 +1,62 @@
+# HG changeset patch
+# Parent de776b466a9213f9b921d2fa93bd71dc47195bbf
+cd: Add Bash-like "cd -" shortcut to change to last directory.
+
+* libinterp/corefcn/dirfns.cc: When issuing "cd", save current working
+  dir before the change. When doing "cd -", change to that one.
+
+diff --git a/libinterp/corefcn/dirfns.cc b/libinterp/corefcn/dirfns.cc
+--- a/libinterp/corefcn/dirfns.cc
++++ b/libinterp/corefcn/dirfns.cc
+@@ -119,6 +119,9 @@
+ \n\
+ Compatibility Note: When called with no arguments, @sc{matlab} prints the\n\
+ present working directory rather than changing to the user's home directory.\n\
++\n\
++As a special case, if @var{dir} is a dash (@samp{-}), the current directory \n\
++is changed to that which was current prior to issuing the previous @command{cd}.\n\
+ @seealso{pwd, mkdir, rmdir, dir, ls}\n\
+ @end deftypefn")
+ {
+@@ -131,15 +134,39 @@
+   if (error_state)
+     return retval;
+ 
++  std::string maybe_curdir;
++
+   if (nargout > 0)
+-    retval = octave_value (octave_env::get_current_directory ());
++    {
++      maybe_curdir = octave_env::get_current_directory ();
++      retval = octave_value (maybe_curdir);
++    }
+ 
+   if (argc > 1)
+     {
+       std::string dirname = argv[1];
++      static std::string lastdir = std::string ();
++
++      if (dirname.length () == 1 && dirname[0] == '-')
++        {
++          // Change to directory that was last cd'd to.
++          if (lastdir.empty ())
++            {
++              error ("cd: no previous directory");
++              return retval;
++            }
++
++          dirname = lastdir;
++        }
+ 
+       if (dirname.length () > 0)
+-        octave_change_to_directory (dirname);
++        {
++          std::string curdir = (nargout > 0) ? maybe_curdir
++            : octave_env::get_current_directory ();
++
++          if (octave_change_to_directory (dirname))
++            lastdir = curdir;
++        }
+     }
+   else
+     {
