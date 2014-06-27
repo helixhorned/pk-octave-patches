@@ -1,0 +1,25 @@
+# HG changeset patch
+# Parent 4033f171fb8d1a9ed0a50dd5dc741f816e7e8a43
+
+diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
+--- a/libinterp/corefcn/input.cc
++++ b/libinterp/corefcn/input.cc
+@@ -513,6 +513,9 @@
+                   else
+                     append_char = '\0';
+                 }
++              else
++                append_char = '\0';
++#if 0
+               else if (matches == 1 && looks_like_struct (retval))
+                 {
+                   // Don't append anything. For structs, we don't know
+@@ -524,7 +527,7 @@
+                 }
+               else
+                 append_char = Vcompletion_append_char;
+-
++#endif
+               command_editor::set_completion_append_character (append_char);
+               break;
+             }

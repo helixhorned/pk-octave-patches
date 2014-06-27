@@ -3,3 +3,5 @@ cd-dash
 classdef-fix-idxparen
 pow-range-checks
 filename-completion
+compl-never-append-space
+randu32_no_1
