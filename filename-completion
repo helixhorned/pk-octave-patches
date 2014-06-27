@@ -1,5 +1,5 @@
 # HG changeset patch
-# Parent b5b20c9dc29eb24b5da7772a87aa84f79b714ca5
+# Parent e98894d80c3524ef6841e825c788b194caa1fda7
 Make file name completion work on the command line, but with some issues left.
 
 * cmd-edit.{cc,h}: add command_editor methods set_saved_start_end(),
@@ -80,7 +80,7 @@ diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
    if (state == 0)
      {
        list_index = 0;
-@@ -409,8 +417,50 @@
+@@ -409,8 +417,55 @@
  
        name_list_len = name_list.length ();
  
@@ -94,7 +94,12 @@ diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
 +      int end = command_editor::get_saved_end ();  // exclusive
 +      std::string our_text = command_editor::get_line_buffer ();
  
-+      assert (text == our_text.substr (start, end-start));
++      if (text != our_text.substr (start, end-start))
++        {
++          // E.g. with qweqwe('qwe', '<TAB>'),
++          // text is "'" while our_text.substr(...) is ")".
++          return retval;
++        }
 +
 +      // Potentially strip suffix if we're completing a component of a
 +      // file name in the middle.
@@ -132,7 +137,7 @@ diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
        name_list.append (file_name_list);
  
        name_list_total_len = name_list.length ();
-@@ -419,7 +469,7 @@
+@@ -419,7 +474,7 @@
  
        matches = 0;
  
@@ -141,7 +146,7 @@ diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
          if (hint == name_list[i].substr (0, hint_len))
            matches++;
      }
-@@ -434,25 +484,48 @@
+@@ -434,25 +489,48 @@
  
            if (hint == name.substr (0, hint_len))
              {
@@ -197,7 +202,7 @@ diff --git a/libinterp/corefcn/input.cc b/libinterp/corefcn/input.cc
                break;
              }
          }
-@@ -481,7 +554,7 @@
+@@ -481,7 +559,7 @@
    // FIXME: this needs to include a comma too, but that
    // causes trouble for the new struct element completion code.
  
