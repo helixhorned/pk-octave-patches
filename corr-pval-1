@@ -1,0 +1,78 @@
+# HG changeset patch
+# Parent 91a4bdf7a16a66e4c46ea76e9cc7aa08f53bf755
+corr.m: obtain p-values from r-to-t transformation; return NaN for 1 observation.
+
+* when correlating data sets with one observation, return NaN instead of 1.
+* use a transformation into a t-distributed variable (assuming the input
+  variables are uncorrelated bivariate Gaussian) to obtain both-sided p-values
+
+diff --git a/scripts/statistics/base/corr.m b/scripts/statistics/base/corr.m
+--- a/scripts/statistics/base/corr.m
++++ b/scripts/statistics/base/corr.m
+@@ -46,7 +46,7 @@
+ ## Created: March 1993
+ ## Adapted-By: jwe
+ 
+-function retval = corr (x, y = [])
++function [retval, pval] = corr (x, y = [])
+ 
+   if (nargin < 1 || nargin > 2)
+     print_usage ();
+@@ -54,12 +54,14 @@
+ 
+   ## Input validation is done by cov.m.  Don't repeat tests here
+ 
+-  ## Special case, scalar is always 100% correlated with itself
++  ## Special case, correlation for a scalar is not defined
+   if (isscalar (x))
+     if (isa (x, "single"))
+-      retval = single (1);
++      retval = single (NaN);
++      pval = single (NaN);
+     else
+-      retval = 1;
++      retval = NaN;
++      pval = NaN;
+     endif
+     return;
+   endif
+@@ -76,6 +78,39 @@
+     retval = c ./ (s * s');
+   endif
+ 
++  if (nargout >= 2)
++    ## CAUTION: Currently, we always interpret a vector X or Y as having
++    ## as many observations as elements, regardless of orientation.
++    if (isvector (x))
++      numobs = numel (x);
++    else
++      numobs = size (x, 1);
++    end
++
++    if (numobs <= 2)
++      pval = NaN (size (retval));
++    else
++      pval = pval_t (retval, numobs);
++    end
++  end
++
++endfunction
++
++
++# Obtain p-values from correlation coefficients using the transformation into a
++# t-distributed variable (assuming the input variables are uncorrelated
++# bivariate Gaussian.)
++#
++# http://en.wikipedia.org/wiki/Pearson_product-moment_correlation_coefficient#Inference
++# "Testing using Student's t-distribution"
++function pval = pval_t (r, n)
++  ## Clamp to [-1+eps/2, 1-eps/2] to make the expression below always
++  ## well-defined.
++  r(r <= -1) = -1 + 0.5*eps;
++  r(r >= 1) = 1 - 0.5*eps;
++
++  x = -abs (r) .* sqrt ((n - 2) ./ (1 - r .^ 2));
++  pval = 2 * tcdf (x, n - 2);
+ endfunction
+ 
+ 
